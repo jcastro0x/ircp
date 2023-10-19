@@ -1,0 +1,56 @@
+# This file is part of the IRCP Project. See LICENSE file for Copyright information
+
+name: win64-latest
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'source/**'
+      - 'test/**'
+      - 'CMakeLists.txt'
+
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  TOOLSET_VAR: msvc-14.3
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name:  Installing Boost
+        shell: powershell
+        run: |
+          wget https://boostorg.jfrog.io/artifactory/main/release/1.83.0/source/boost_1_83_0.tar.gz -OutFile boost_1_83_0.tar.gz
+          tar -xzf .\boost_1_83_0.tar.gz
+          cd boost_1_83_0
+          $env:BOOST_INSTALLED_VAR = "$(Get-Location)"
+          echo "BOOST_INSTALLED_VAR=$(Get-Location)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          .\bootstrap.bat --with-libraries=all --prefix=$env:BOOST_INSTALLED_VAR
+          .\b2 --prefix=$env:BOOST_INSTALLED_VAR install link=static toolset=${{env.TOOLSET_VAR}}
+
+      - name: Configure CMake
+        shell: powershell
+        run: >
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DCMAKE_CXX_COMPILER=cl
+          -DCMAKE_C_COMPILER=cl
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DBoost_NO_WARN_NEW_VERSIONS=ON
+          -DBoost_USE_STATIC_LIBS=ON
+          -DBOOST_INCLUDEDIR="$env:BOOST_INSTALLED_VAR"
+          -DBoost_LIBRARY_DIR="$env:BOOST_INSTALLED_VAR/lib"
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Test
+        working-directory: ${{ steps.strings.outputs.build-output-dir }}
+        run: ctest --build-config ${{ matrix.build_type }}

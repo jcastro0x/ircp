@@ -1,0 +1,42 @@
+18 Oct 2023                                                                                                   @jcastro0x
+
+                                        IRCP PROTOCOL SPECIFICATION 1.0
+                                        -------------------------------
+
+1. MOTIVATION
+In 2019, a group of former players of the Spanish MMORPG "La Prisión" was created with the intention of recreating
+that game using current technologies. The biggest obstacle that the project suffered was the creation of a robust,
+secure, fast, and low-cost server.
+
+As a programmer, I have always been interested in the creation of an MMO and I believe that the best way to approach it
+is starting with something simple yet complex enough to resemble the final intention.
+
+IRCP fulfills that purpose. By simulating an original IRC server, it has to consider concepts such as rooms, users,
+encryption and own sub-programs, which range from rolling dice to a game of chess.
+
+2. TERMINOLOGY
+The terminology used in the protocol is detailed below:
+
+- IRCP (Internet Relay Chat Plus)
+- IRCPP (Internet Relay Chat Plus Protocol)
+- Package (Un conjunto de bytes estructurados de una forma concreta para contener datos necesarios para IRCPP)
+
+3. PACKAGE LAYOUT
+
+0                   1                   2                   3
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|          Payload Size         |            OP Code            |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                            Checksum                           |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                                                               |
+|                            Payload                            |
+|                       ... up to 512 bits                      |
+|                                                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+- Payload Size (16 bits):  The size of the Payload field. This represents the length of the Payload data.
+- OP Code (16 bits)     :  The operation code indicating the type of operation to be performed.
+- Checksum (32 bits)    :  Used for error-checking of the header and data portions of the packet.
+- Payload (variable)    :  The actual data being transferred. This is variable in length, from 0 to 512 bytes.

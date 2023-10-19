@@ -1,0 +1,98 @@
+# This file is part of the IRCP Project. See LICENSE file for Copyright information
+
+name: ubuntu-latest
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'source/**'
+      - 'test/**'
+      - 'CMakeLists.txt'
+
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        c_compiler: [gcc, clang]
+        include:
+          - os: ubuntu-latest
+            c_compiler: gcc
+            cpp_compiler: g++
+          - os: ubuntu-latest
+            c_compiler: clang
+            cpp_compiler: clang++
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install gcc-13
+        if: matrix.c_compiler == 'gcc'
+        run: |
+          sudo apt update
+          sudo apt install -y gcc-13 g++-13
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 10 --slave /usr/bin/g++ g++ /usr/bin/g++-13
+
+      - name: GCC version
+        if: matrix.c_compiler == 'gcc'
+        run: |
+          g++ --version
+          g++ -E -x c++ - -v < /dev/null
+
+      # This configuration set up is for making sure that clang does not use its own headers. Ubuntu currently supports
+      # up to gcc11 including its headers, but for our needs, we need gcc13 headers (compatible with c++23). So, we
+      # decided to only install libstdc++ to get the most recent headers. This is more cost-effective than installing
+      # the entire gcc13
+      - name: Install clang-17
+        if: matrix.c_compiler == 'clang'
+        run: |
+          sudo apt-get --reinstall install libstdc++-13-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod u+x llvm.sh
+          sudo ./llvm.sh 17
+          sudo mv /usr/bin/clang /usr/bin/clang.bak
+          sudo ln -s /usr/bin/clang-17 /usr/bin/clang
+          sudo mv /usr/bin/clang++ /usr/bin/clang++.bak
+          sudo ln -s /usr/bin/clang++-17 /usr/bin/clang++
+
+      - name: Clang version
+        if: matrix.c_compiler == 'clang'
+        run: |
+          clang++ --version
+          clang++ -E -x c++ - -v < /dev/null
+
+      - name:  Installing Boost
+        shell: bash
+        run: |
+          wget https://boostorg.jfrog.io/artifactory/main/release/1.83.0/source/boost_1_83_0.tar.gz
+          tar -xf boost_1_83_0.tar.gz
+          cd boost_1_83_0
+          ./bootstrap.sh --with-libraries=all
+          sudo ./b2 install link=static
+
+      - name: Configure CMake
+        shell: bash
+        run: >
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DBoost_USE_STATIC_LIBS=ON
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+      - name: Test
+        working-directory: ${{ steps.strings.outputs.build-output-dir }}
+        run: ctest --build-config ${{ matrix.build_type }}

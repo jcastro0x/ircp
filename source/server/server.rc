@@ -1,0 +1,6 @@
+// This file is part of the IRCP Project. See LICENSE file for Copyright information
+
+#include <winver.h>
+
+IDI_APPICON ICON DISCARDABLE "server.ico"
+APP_MANIFEST RT_MANIFEST "manifest.xml"
