@@ -12,6 +12,4 @@
 "Internet Relay Chat Plus\n"\
 "\n"
 
-#define PRINT_LOGO \
-std::setlocale(LC_ALL, "en_US.UTF-8");\
-std::cout << IRCP_LOGO;
+#define PRINT_LOGO std::cout << IRCP_LOGO;

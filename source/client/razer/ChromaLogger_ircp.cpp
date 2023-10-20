@@ -97,7 +97,7 @@ void ChromaLogger::fwprintf(FILE* /*stream*/, const wchar_t* format, ...)
         const auto string = boost::locale::conv::utf_to_utf<char>(buffer);
         logging::trace(string);
     }
-    catch(boost::locale::conv::conversion_error& e)
+    catch(boost::locale::conv::conversion_error&)
     {
         logging::error("ChromaLogger fail to parse wchar_t to char formatted message. Using vfwprintf:");
         ::vfwprintf(stdout, format, args);

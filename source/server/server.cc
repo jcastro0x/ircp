@@ -13,6 +13,10 @@
 
 #include <shared/utilities/hook_signals.hh>
 
+#if _WIN64
+#include <windows.h>
+#endif
+
 
 class dummy_socket : public IRCP::network::socket
 {
@@ -45,6 +49,13 @@ public:
 
 int main(const int /*argc*/, const char** /*argv*/)
 {
+    #if _WIN64
+    SetConsoleOutputCP(CP_UTF8);
+    #else
+    std::setlocale(LC_ALL, "en_US.UTF-8");
+    #endif
+
+
     // Read configuration
     dummy_config conf;
 
@@ -56,12 +67,8 @@ int main(const int /*argc*/, const char** /*argv*/)
     // Print program title
     PRINT_LOGO;
 
-    std::cout << "1) ✊\n";
-    std::cout << "2) ✋\n";
-    std::cout << "3) ✌️\n";
-
-    IRCP::logging::logging::trace("✌️");
-    IRCP::logging::logging::trace("😜");
+    IRCP::logging::logging::trace("Em😜🥸jii support‼️");
+    IRCP::logging::logging::trace("====================");
 
     try
     {
