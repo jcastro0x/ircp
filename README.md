@@ -18,6 +18,18 @@ Internet Relay Chat Plus is a learning project to create an IRC-like server from
 ## Conventions and Standards
 - clang-format (included in project. **WORK IN PROGRESS**)
 
+## Contributing
+
+This is a project that I'm using for my personal learning. However, if you wish to participate, you're welcome to copy 
+the project, make your modifications, and then submit a request to include your changes in the original project. This is
+a way for you to contribute to the project or share any enhancements that you've made.
+
+## Acknowledgements
+
+- [Boost.Asio](https://www.boost.org/doc/libs/1_77_0/doc/html/boost_asio.html) - The Boost.Asio library for asynchronous I/O and networking.
+- [Hands-On Network Programming with C](https://handsonnetworkprogramming.com/) - A modern approach to socket programming in the C or C++ programming language.
+- [Zator Systems](https://www.zator.com/Internet/index.htm) - A spanish website about internet and its history.
+
 ## License
 Copyright (c) 2023 Javier Castro - jcastro0x@gmail.com
 
