@@ -10,11 +10,14 @@ This document elaborates on the functionality of the IRCPP protocol. It focuses 
 implement it in various programming languages or so that it can be used as a guide to understanding the official
 implementation in C++.
 
-IRCPP is a TCP based protocol to works ina IRC-like server, focusing in:
+IRCPP is a TCP-based protocol designed for operation on an IRC-like server, concentrating on:
 - Security (server authority)
-- Security (encription)
+- Security (encryption)
 - Security (user privileges)
-- Op Codes
+- Opcode operations
+
+I understand that this protocol may have many errors and counterproductive considerations, so all kinds of feedback and
+assistance are greatly appreciated. Please refer to the MOTIVATION section for more details.
 
 The flowcharts were created using https://asciiflow.com.
 
@@ -68,7 +71,11 @@ The terminology used in the protocol is detailed below:
 
     3.11 TIMEOUT-WITH-BYTE-WISE-REFRESH
 
-        ┌──────────────────────────────┐
+                     ┌─────┐
+                     │BEGIN│
+                     └──┬──┘
+                        │
+        ┌───────────────▼──────────────┐
         │TIMEOUT-WITH-BYTE-WISE-REFRESH│
         └───────────────┬──────────────┘
                         │
@@ -77,30 +84,52 @@ The terminology used in the protocol is detailed below:
          │    │(WAIT 5S TILL NO) │     │
          │    └─────────▲────────┘     │
          │              │              │
-     ┌───▼┐             │          ┌───▼───────────────┐      ┌───┐
-     │FAIL│             └────NO────┤RECEIVED ALL BYTES?├─YES──►FIN│
-     └────┘                        └───────────────────┘      └───┘
+     ┌───▼─────┐        │          ┌───▼───────────────┐      ┌───┐
+     │  FAIL   │        └────NO────┤RECEIVED ALL BYTES?├─YES──►END│
+     └─────────┘                   └───────────────────┘      └───┘
 
 
 4. PACKAGE LAYOUT
 
-  0                 1                 2                 3
-  0 1 2 3 4 5 6 7 8 0 1 2 3 4 5 6 7 8 0 1 2 3 4 5 6 7 8 0 1 2 3 4 5 6 7 8
- ┌────────────────────────────────────┬──────────────────────────────────┐
- │           Payload Size             │              OP Code             │
- ├────────────────────────────────────┴──────────────────────────────────┤
- │                                Checksum                               │
- ├───────────────────────────────────────────────────────────────────────┤
- │                                                                       │
- │                                 Payload                               │
- │                            ... up to 512 bits                         │
- │                                                                       │
- └───────────────────────────────────────────────────────────────────────┘
+  0               1               2               3
+  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+ ┌─────┬───┬─┬─┬─┬───────────────────┬───────────────────────────┐
+ │  C  │ R │E│P│O│      OP Code      │        Payload Size       │
+ ├─────┴───┴─┴─┴─┴───────────────────┴───────────────────────────┤
+ │                            Checksum                           │
+ ├───────────────────────────────────────────────────────────────┤
+ │                                                               │
+ │                              Payload                          │
+ │                       ... up to 8192 bits                     │
+ │                                                               │
+ └───────────────────────────────────────────────────────────────┘
+ C=[1..7] R=[1..3] E=1 P=1 O=1
+ * 64b to 8256b (8B to 1032B)
 
-- Payload Size (16 bits):  The size (in bytes) of the Payload field. This represents the length of the Payload data.
-- OP Code (16 bits)     :  The operation code indicating the type of operation to be performed.
-- Checksum (32 bits)    :  Used for error-checking of the header and data portions of the packet.
-- Payload (variable)    :  The actual data being transferred. This is variable in length, from 0 to 512 bytes.
+4.1 DETAILS
+
+- OP Code      (10 bits) : The operation code that specifies the type of operation to be performed.
+- Payload Size (14 bits) : The size (in bytes) of the Payload field. It represents the length of the Payload data.
+- Checksum     (32 bits) : Utilized for error-checking the header and data sections of the packet.
+- Payload      (?? bits) : The actual data to be transferred. Its length is variable, ranging from 0 to 512 bytes.
+- Flags        ( 8 bits) : if C is bigger than 0, this connection was requested to close by C reason.
+                           if R is bigger than 0, retransmission is requested by R reason.
+                           if P is set, permission error has occurred (this connection has lower required level)
+                           if O is set, op-code error has ocurred (not exist)
+
+4.1.1 SOME CONSIDERATIONS
+Payload Size has 14 bits, allowing payloads of up to 8192 bits. Added to the 64 bits of the header, this gives us
+packets with a maximum size of 1032 bytes. Since the standard MSS of an Ethernet network is 1460 (the standard Ethernet
+MTU of 1500 bytes less 20 bytes for the IP header and 20 bytes for the TCP header), it fits very well. Even considering
+the subtraction of the 40 bytes of an IPv6 header instead of the 20 bytes of an IPv4, it still functions efficiently.
+
+4.1.1.1 OPTIONAL FLAGS
+All flags are optional in the implementation, which allows the server to implement them and the client not. This is
+useful for the server to know if an op-code has not been executed on the client side, but not the other way around.
+
+It is expected that:
+- The client listens to all flags and acts accordingly
+- The client does not send any flags and the server does not listen to them
 
 5 COMMUNICATION BETWEEN SOCKETS
 
@@ -112,121 +141,124 @@ IRCPP uses a system inspired by TLS to encrypt communication:
 3. The server decrypts the AES key and caches it for this client's connection.
 4. The server sends an ACK to notify of the successful connection.
 
-
-               ┌──────┐                     ┌──────┐
-               │CLIENT│                     │SERVER│
-               └──┬───┘                     └───┬──┘
-                  │                             │
-                  ├───────TCP ESTABLISHED───────►
-                  │                             │
-                  │                  ┌──────────┴─────────┐
-                  │                  │GENERATE UNIQUE RSA │
-                  │                  │PUBLIC KEY 2048 BITS│
-                  │                  └──────────┬─────────┘
-                  │                             │
-                  │                      ┌──────▼─────┐
-                  ◄──────────────────────┤SEND PUB KEY│
-                  │                      └──────┬─────┘
-       ┌──────────▼──────────┐                  │
-       │GENERATE 128B AES KEY│                  │
-       └──────────┬──────────┘                  │
-                  │                             │
-          ┌───────▼────────┐                    │
-          │ENCRYPT WITH RSA│                    │
-          └───────┬────────┘                    │
-                  │                             │
-          ┌───────▼─────────┐                   │
-          │SEND 128b AES KEY│                   │
-          └───────┬─────────┘                   │
-                  │                             │
-              ┌───▼─────┐                       │
-              │CACHE AES├───────────────────────►
-              └───┬─────┘                       │
-                  │                             │
-                  │                        ┌────▼────┐
-                  ◄───HANDSHAKE COMPLETED──┤CACHE AES│
-                                           └─────────┘
-
+          ┌──────┐                     ┌──────┐
+          │CLIENT│                     │SERVER│
+          └──┬───┘                     └───┬──┘
+             │                             │
+             ├───────TCP ESTABLISHED───────►
+             │                             │
+             │                  ┌──────────┴─────────┐
+             │                  │GENERATE UNIQUE RSA │
+             │                  │PUBLIC KEY 2048 BITS│
+             │                  └──────────┬─────────┘
+             │                             │
+             │                      ┌──────▼─────┐
+             ◄──────────────────────┤SEND PUB KEY│
+             │                      └──────┬─────┘
+  ┌──────────▼──────────┐                  │
+  │GENERATE 128b AES KEY│                  │
+  └──────────┬──────────┘                  │
+             │                             │
+     ┌───────▼────────┐                    │
+     │ENCRYPT WITH RSA│                    │
+     └───────┬────────┘                    │
+             │                             │
+         ┌───▼─────┐                       │
+         │CACHE AES│                       │
+         └───┬─────┘                       │
+             │                             │
+     ┌───────▼─────────┐                   │
+     │SEND 128b AES KEY├───────────────────►
+     └───────┬─────────┘                   │
+             │                             │
+             │                        ┌────▼────┐
+             ◄───HANDSHAKE COMPLETED──┤CACHE AES│
+                                      └─────────┘
 
 
 5.2 PACKAGE SENDING/RECEIVING
 
     5.2.1 RECEIVE FLOW
 
-                                                           ┌───────────────┐
-                                                           │WAIT FOR HEADER│
-              ┌────────────────────────────────────────────►   64 BYTES    ◄─────────────────┐
-              │                                            └───────┬───────┘                 │
-              │                                                    │                         │
-              │                                     ┌──────────────▼───────────────┐         │
-             FIN                             ┌─FAIL─┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
-              │                              │      └──────────────┬───────────────┘         │
-              │                              │                     │                         │
-┌─────────────┴────────────────┐       ┌─────▼────┐                │                         │
-│TIMEOUT-WITH-BYTE-WISE-REFRESH├─FAIL──►CLOSE CONN│               FIN                        │
-└─────────────▲────────────────┘       └─▲─▲─▲────┘                │                         │
-              │                          │ │ │                     │                         │
-              │                          │ │ │            ┌────────▼─────────┐               │
-       ┌──────┴─────┐                    │ │ └──────YES───┤PAYLOAD_SIZE > 512│               │
-       │    WAIT    │                    │ │              └────────┬─────────┘               │
-       │CONFIRMATION│                    │ │                       │                         │
-       └──────▲─────┘                    │ │                       │                         │
-              │                          │ │                       NO                        │
-       ┌──────┴───────┐                  │ │                       │                         │
-       │RETRANSMISSION│                  │ │             ┌─────────▼──────────┐              │
-       │   REQUEST    │                  │ │             │  WAIT FOR PAYLOAD  │              │
-       └──────▲───────┘                  │ │             │ PAYLOAD_SIZE BYTES │              │
-              │                          │ │             └─────────┬──────────┘              │
-              │                          │ │                       │                         │
-              │                          │ │        ┌──────────────▼───────────────┐         │
-              │                          │ └───FAIL─┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
-              │      ┌─────────────┐     │          └──────────────┬───────────────┘         │
-              └───NO─┤CONN_ERRORS>4├─YES─┘                         │                         │
-                     └──────▲──────┘                              FIN                        │
-                            │                                      │                         │
-                   ┌────────┴───────┐                    ┌─────────▼─────────┐               │
-                   │CONN_ERRORS += 1◄────────┬──FAIL─────┤CHECKSUM VALIDATION│               │
-                   └────────────────┘        │           └─────────┬─────────┘               │
-                                             │                     │                         │
-                                             │                  SUCCESS                      │
-                                             │                     │                         │
-                                             │               ┌─────▼──────┐                  │
-                                             │               │DECRYPT WITH│                  │
-                                             └──FAIL─────────┤ CACHED AES │                  │
-                                                             └─────┬──────┘                  │
-                                                                   │                         │
-                                                                SUCCESS                      │
-                                                                   │                         │
-                                                            ┌──────▼──────┐            ┌─────┴──────┐
-                                                            │CHECK OP-CODE├──────FAIL──►SEND INVALID│
-                                                            └──────┬──────┘            │   OP-CODE  │
-                                                                   │                   └─────▲──────┘
-                                                                SUCCESS                      │
-                                                                   │                         │
-                                                             ┌─────▼────┐                    │
-                                                             │CHECK CONN│                    │
-                                                             │ AUTHORITY├────────FAIL────────┘
-                                                             └─────┬────┘
-                                                                   │
-                                                                SUCCESS
-                                                                   │
-                                                           ┌───────▼────────┐
-                                                           │CONN_ERRORS = 0 │
-                                                           └───────┬────────┘
-                                                                   │
-                                                               ┌───▼───┐
-                                                               │EXECUTE│
-                                                               │OP-CODE│
-                                                               └───────┘
-
-
-
+                                                                          ┌─────┐
+                                                                          │BEGIN│
+                                                                          └──┬──┘
+                                                                             │
+                                                                     ┌───────▼───────┐
+                 ┌───────────────────────────────────────────────────►WAIT FOR HEADER◄─────────────────┐
+                 │                                                   └───────┬───────┘                 │
+                 │                                                           │                         │
+                 │                                            ┌──────────────▼───────────────┐         │
+                END                               ┌─C:1──FAIL─┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
+                 │                                │           └──────────────┬───────────────┘         │
+                 │                                │                          │                         │
+   ┌─────────────┴────────────────┐           ┌───▼──────┐                   │                         │
+   │TIMEOUT-WITH-BYTE-WISE-REFRESH├─FAIL──C:5─►CLOSE CONN│                  END                        │
+   └────────────┬─────────────────┘           └──▲───────┘                   │                         │
+                │                                │                           │                         │
+                │                                │                  ┌────────▼─────────┐               │
+         ┌──────┴─────┐                          ├───────C:2──YES───┤PAYLOAD_SIZE > 512│               │
+         │    WAIT    │                          │                  └────────┬─────────┘               │
+         │CONFIRMATION│                          │                           │                         │
+         └──────▲─────┘                          │                           │                         │
+                │                                │                           NO                        │
+                │                                │                           │                         │
+         ┌──────┴───────┐                        │                 ┌─────────▼──────────┐              │
+         │RETRANSMISSION│                        │                 │  WAIT FOR PAYLOAD  │              │
+         │   REQUEST    │                        │                 │ PAYLOAD_SIZE BYTES │              │
+         └──────▲───────┘                        │                 └─────────┬──────────┘              │
+                │                                │                           │                         │
+                │                                │            ┌──────────────▼───────────────┐         │
+                │                                ├─C:3──FAIL──┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
+                │     ┌─────────────┐            │            └──────────────┬───────────────┘         │
+                └─NO──┤CONN_ERRORS>8├──YES──C:4──┘                           │                         │
+                      └──────▲──────┘                                       END                        │
+                             │                                               │                         │
+                    ┌────────┴───────┐                             ┌─────────▼─────────┐               │
+                    │CONN_ERRORS += 1◄─────────────────┬─R:1──FAIL─┤CHECKSUM VALIDATION│               │
+                    └────────────────┘                 │           └─────────┬─────────┘               │
+                                                       │                     │                         │
+                                                       │                  SUCCESS                      │
+                                                       │                     │                         │
+                                                       │               ┌─────▼──────┐                  │
+                                                       │               │DECRYPT WITH│                  │
+                                                       └─R:2──FAIL─────┤ CACHED AES │                  │
+                                                                       └─────┬──────┘                  │
+                                                                             │                         │
+                                                                          SUCCESS                      │
+                                                                             │                         │
+                                                                      ┌──────▼──────┐                  │
+                                                                      │CHECK OP-CODE├──────FAIL──0:1───┤
+                                                                      └──────┬──────┘                  │
+                                                                             │                         │
+                                                                          SUCCESS                      │
+                                                                             │                         │
+                                                                       ┌─────▼────┐                    │
+                                                                       │CHECK CONN│                    │
+                                                                       │ AUTHORITY├────────FAIL──P:1───┤
+                                                                       └─────┬────┘                    │
+                                                                             │                         │
+                                                                          SUCCESS                      │
+                                                                             │                         │
+                                                                     ┌───────▼────────┐                │
+                                                                     │CONN_ERRORS = 0 │                │
+                                                                     └───────┬────────┘                │
+                                                                             │                         │
+                                                                         ┌───▼───┐                     │
+                                                                         │EXECUTE│                     │
+                                                                         │OP-CODE├─────────FAIL──E:1───┘
+                                                                         └───┬───┘
+                                                                             │
+                                                                          SUCCESS
+                                                                             │
+                                                                           ┌─▼─┐
+                                                                           │END│
+                                                                           └───┘
 
 
     5.2.2 SEND FLOW
-
-
-
+    IRCPP consider two local-buffer when sending data. This allow to still concatenate bytes to send in a back-buffer
+    while the main-buffer is still sending through the network.
 
 
 
