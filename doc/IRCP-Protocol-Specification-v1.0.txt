@@ -3,7 +3,22 @@
                                         IRCP PROTOCOL SPECIFICATION 1.0
                                         -------------------------------
 
-1. MOTIVATION
+
+
+1. SUMMARY
+This document elaborates on the functionality of the IRCPP protocol. It focuses on the technical aspects and how to
+implement it in various programming languages or so that it can be used as a guide to understanding the official
+implementation in C++.
+
+IRCPP is a TCP based protocol to works ina IRC-like server, focusing in:
+- Security (server authority)
+- Security (encription)
+- Security (user privileges)
+- Op Codes
+
+The flowcharts were created using https://asciiflow.com.
+
+2. MOTIVATION
 In 2019, a group of former players of the Spanish MMORPG "La Prisión" was created with the intention of recreating
 that game using current technologies. The biggest obstacle that the project suffered was the creation of a robust,
 secure, fast, and low-cost server.
@@ -14,29 +29,239 @@ is starting with something simple yet complex enough to resemble the final inten
 IRCP fulfills that purpose. By simulating an original IRC server, it has to consider concepts such as rooms, users,
 encryption and own sub-programs, which range from rolling dice to a game of chess.
 
-2. TERMINOLOGY
+3. TERMINOLOGY
 The terminology used in the protocol is detailed below:
 
-- IRCP (Internet Relay Chat Plus)
-- IRCPP (Internet Relay Chat Plus Protocol)
-- Package (Un conjunto de bytes estructurados de una forma concreta para contener datos necesarios para IRCPP)
+    3.01 IRCP
+    Internet Relay Chat Plus
 
-3. PACKAGE LAYOUT
+    3.02 IRCPP
+    Internet Relay Chat Plus Protocol
 
-0                   1                   2                   3
-0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|          Payload Size         |            OP Code            |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|                            Checksum                           |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|                                                               |
-|                            Payload                            |
-|                       ... up to 512 bits                      |
-|                                                               |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    3.03 PACKAGE
+    A structured set of bytes specifically assembled to contain necessary data for IRCPP
 
-- Payload Size (16 bits):  The size of the Payload field. This represents the length of the Payload data.
+    3.04 SERVER
+    The machine or program accepting connections from multiple clients in an IRCPP Network.
+
+    3.05 CLIENT
+    The machine or program that initiates connection and communication with the IRCPP Server.
+
+    3.06 LISTENER
+    A component in the client or server that waits and listens for PACKAGES over the network.
+
+    3.07 SOCKET
+    A software endpoint that establishes bidirectional communication between server and client in the IRCPP Network.
+
+    3.08 LISTENER BEAT
+    A scheduled signal sent by the listener to the other socket verifying its active status in the IRCPP Network.
+
+    3.09 HEADER
+    The initial part of the PACKAGE containing metadata about the data to be transmitted over IRCPP.
+
+    3.10 PAYLOAD SIZE
+    The size of the actual data contained in the PACKAGE excluding the header.
+
+    3.09 LOST
+
+    3.10 HANDSHAKING
+
+    3.11 TIMEOUT-WITH-BYTE-WISE-REFRESH
+
+        ┌──────────────────────────────┐
+        │TIMEOUT-WITH-BYTE-WISE-REFRESH│
+        └───────────────┬──────────────┘
+                        │
+              ┌─────────▼────────┐
+         ┌─NO─┤RECEIVED 1+ BYTES?├─YES─┐
+         │    │(WAIT 5S TILL NO) │     │
+         │    └─────────▲────────┘     │
+         │              │              │
+     ┌───▼┐             │          ┌───▼───────────────┐      ┌───┐
+     │FAIL│             └────NO────┤RECEIVED ALL BYTES?├─YES──►FIN│
+     └────┘                        └───────────────────┘      └───┘
+
+
+4. PACKAGE LAYOUT
+
+  0                 1                 2                 3
+  0 1 2 3 4 5 6 7 8 0 1 2 3 4 5 6 7 8 0 1 2 3 4 5 6 7 8 0 1 2 3 4 5 6 7 8
+ ┌────────────────────────────────────┬──────────────────────────────────┐
+ │           Payload Size             │              OP Code             │
+ ├────────────────────────────────────┴──────────────────────────────────┤
+ │                                Checksum                               │
+ ├───────────────────────────────────────────────────────────────────────┤
+ │                                                                       │
+ │                                 Payload                               │
+ │                            ... up to 512 bits                         │
+ │                                                                       │
+ └───────────────────────────────────────────────────────────────────────┘
+
+- Payload Size (16 bits):  The size (in bytes) of the Payload field. This represents the length of the Payload data.
 - OP Code (16 bits)     :  The operation code indicating the type of operation to be performed.
 - Checksum (32 bits)    :  Used for error-checking of the header and data portions of the packet.
 - Payload (variable)    :  The actual data being transferred. This is variable in length, from 0 to 512 bytes.
+
+5 COMMUNICATION BETWEEN SOCKETS
+
+5.1 HANDSHAKING
+IRCPP uses a system inspired by TLS to encrypt communication:
+
+1. Once the TCP connection is established, the SERVER sends a UNIQUE RSA public key for the CLIENT.
+2. The CLIENT generates an internal AES 128 bits key, caches it, encrypts it with RSA, and sends it back to the server.
+3. The server decrypts the AES key and caches it for this client's connection.
+4. The server sends an ACK to notify of the successful connection.
+
+
+               ┌──────┐                     ┌──────┐
+               │CLIENT│                     │SERVER│
+               └──┬───┘                     └───┬──┘
+                  │                             │
+                  ├───────TCP ESTABLISHED───────►
+                  │                             │
+                  │                  ┌──────────┴─────────┐
+                  │                  │GENERATE UNIQUE RSA │
+                  │                  │PUBLIC KEY 2048 BITS│
+                  │                  └──────────┬─────────┘
+                  │                             │
+                  │                      ┌──────▼─────┐
+                  ◄──────────────────────┤SEND PUB KEY│
+                  │                      └──────┬─────┘
+       ┌──────────▼──────────┐                  │
+       │GENERATE 128B AES KEY│                  │
+       └──────────┬──────────┘                  │
+                  │                             │
+          ┌───────▼────────┐                    │
+          │ENCRYPT WITH RSA│                    │
+          └───────┬────────┘                    │
+                  │                             │
+          ┌───────▼─────────┐                   │
+          │SEND 128b AES KEY│                   │
+          └───────┬─────────┘                   │
+                  │                             │
+              ┌───▼─────┐                       │
+              │CACHE AES├───────────────────────►
+              └───┬─────┘                       │
+                  │                             │
+                  │                        ┌────▼────┐
+                  ◄───HANDSHAKE COMPLETED──┤CACHE AES│
+                                           └─────────┘
+
+
+
+5.2 PACKAGE SENDING/RECEIVING
+
+    5.2.1 RECEIVE FLOW
+
+                                                           ┌───────────────┐
+                                                           │WAIT FOR HEADER│
+              ┌────────────────────────────────────────────►   64 BYTES    ◄─────────────────┐
+              │                                            └───────┬───────┘                 │
+              │                                                    │                         │
+              │                                     ┌──────────────▼───────────────┐         │
+             FIN                             ┌─FAIL─┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
+              │                              │      └──────────────┬───────────────┘         │
+              │                              │                     │                         │
+┌─────────────┴────────────────┐       ┌─────▼────┐                │                         │
+│TIMEOUT-WITH-BYTE-WISE-REFRESH├─FAIL──►CLOSE CONN│               FIN                        │
+└─────────────▲────────────────┘       └─▲─▲─▲────┘                │                         │
+              │                          │ │ │                     │                         │
+              │                          │ │ │            ┌────────▼─────────┐               │
+       ┌──────┴─────┐                    │ │ └──────YES───┤PAYLOAD_SIZE > 512│               │
+       │    WAIT    │                    │ │              └────────┬─────────┘               │
+       │CONFIRMATION│                    │ │                       │                         │
+       └──────▲─────┘                    │ │                       │                         │
+              │                          │ │                       NO                        │
+       ┌──────┴───────┐                  │ │                       │                         │
+       │RETRANSMISSION│                  │ │             ┌─────────▼──────────┐              │
+       │   REQUEST    │                  │ │             │  WAIT FOR PAYLOAD  │              │
+       └──────▲───────┘                  │ │             │ PAYLOAD_SIZE BYTES │              │
+              │                          │ │             └─────────┬──────────┘              │
+              │                          │ │                       │                         │
+              │                          │ │        ┌──────────────▼───────────────┐         │
+              │                          │ └───FAIL─┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
+              │      ┌─────────────┐     │          └──────────────┬───────────────┘         │
+              └───NO─┤CONN_ERRORS>4├─YES─┘                         │                         │
+                     └──────▲──────┘                              FIN                        │
+                            │                                      │                         │
+                   ┌────────┴───────┐                    ┌─────────▼─────────┐               │
+                   │CONN_ERRORS += 1◄────────┬──FAIL─────┤CHECKSUM VALIDATION│               │
+                   └────────────────┘        │           └─────────┬─────────┘               │
+                                             │                     │                         │
+                                             │                  SUCCESS                      │
+                                             │                     │                         │
+                                             │               ┌─────▼──────┐                  │
+                                             │               │DECRYPT WITH│                  │
+                                             └──FAIL─────────┤ CACHED AES │                  │
+                                                             └─────┬──────┘                  │
+                                                                   │                         │
+                                                                SUCCESS                      │
+                                                                   │                         │
+                                                            ┌──────▼──────┐            ┌─────┴──────┐
+                                                            │CHECK OP-CODE├──────FAIL──►SEND INVALID│
+                                                            └──────┬──────┘            │   OP-CODE  │
+                                                                   │                   └─────▲──────┘
+                                                                SUCCESS                      │
+                                                                   │                         │
+                                                             ┌─────▼────┐                    │
+                                                             │CHECK CONN│                    │
+                                                             │ AUTHORITY├────────FAIL────────┘
+                                                             └─────┬────┘
+                                                                   │
+                                                                SUCCESS
+                                                                   │
+                                                           ┌───────▼────────┐
+                                                           │CONN_ERRORS = 0 │
+                                                           └───────┬────────┘
+                                                                   │
+                                                               ┌───▼───┐
+                                                               │EXECUTE│
+                                                               │OP-CODE│
+                                                               └───────┘
+
+
+
+
+
+    5.2.2 SEND FLOW
+
+
+
+
+
+
+
+** TODO **
+-Abstract/Summary: Add a brief abstract that outlines what the document covers and its purpose.
+
+-Introduction: A more elaborate introduction would benefit overall comprehension. For example, you could enhance your
+'Motivation' section with further information about IRCPP in general, the motivation behind its development and its key
+features.
+
+-Glossary: Though you have a terminology section, a more comprehensive glossary could help, especially if more unique or
+ complex terms start to emerge in the document.
+
+-Diagrams and Examples: If possible, illustrating the mentioned concepts with some diagrams, flowcharts, or concrete
+examples could improve comprehension. For instance, you could illustrate the flow of encrypted communication or the
+process when a malformed packet is received.
+
+-Roles and Responsibilities: Clear definitions of the different roles (such as server, client, listener) and their
+responsibilities in the protocol will provide further clarity.
+
+-Error Handling: Add more information on error codes, what they mean, and potential methods of resolving standard
+issues.
+
+-Security Considerations: Discuss potential security risks and measures to mitigate them. Even if the protocol is meant
+to be secure, certain vulnerabilities and weaknesses might still exist.
+
+-Versioning and Updates: If there are plans for future versions of the protocol, providing a section on how upgrades,
+versioning or backward compatibility would be handled could be beneficial.
+
+-References/Bibliography: Cite any important literature, specifications, or documents that you've relied upon or that
+support your document.
+
+-Validation and Quality Assurance: Detail any validation or QA steps that have been undertaken to ensure the operation
+of the protocol.
+
+-Conformance: Include a section on conformance criteria, i.e., what needs to be in place for compliance with the
+specifications.

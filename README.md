@@ -13,7 +13,9 @@
 > This project is under development. Its current status is UNSTABLE.
 
 ## Brief
-Internet Relay Chat Plus is a learning project to create an IRC-like server from scratch using modern C++.
+Internet Relay Chat Plus is a learning project to create an IRC-like server from scratch using modern C++23.
+
+- [Read about IRCP Protocol here](./doc/IRCP-Protocol-Specification-v1.0.txt)
 
 ## Conventions and Standards
 - clang-format (included in project. **WORK IN PROGRESS**)
