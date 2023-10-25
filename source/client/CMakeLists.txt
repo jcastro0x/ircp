@@ -28,7 +28,7 @@ list(APPEND CLIENT_SOURCES
 # Create executable
 # ----------------------------------------------------------------------------------------------------------------------
 add_executable(client ${CLIENT_SOURCES})
-target_link_libraries(client SharedLibrary)
+target_link_libraries(client ${SHARED_LIBRARY_NAME})
 
 target_include_directories(client PRIVATE ${CMAKE_SOURCE_DIR}/source/client)
 target_compile_definitions(client PRIVATE -DUNICODE -D_UNICODE) # Required by Razer SDK

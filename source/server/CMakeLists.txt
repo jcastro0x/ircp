@@ -19,7 +19,7 @@ endif()
 # Create executable
 # ----------------------------------------------------------------------------------------------------------------------
 add_executable(server ${SERVER_SOURCES})
-target_link_libraries(server SharedLibrary)
+target_link_libraries(server ${SHARED_LIBRARY_NAME})
 
 target_include_directories(server PRIVATE ${CMAKE_SOURCE_DIR}/source/server)
 
