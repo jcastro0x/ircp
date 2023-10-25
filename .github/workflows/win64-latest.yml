@@ -25,6 +25,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: 'amd64'
+      - uses: ilammy/setup-nasm@v1
+        with:
+          version: '2.15.05'
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name:  Installing OpenSSL
+        shell: powershell
+        run: |
+          wget https://www.openssl.org/source/openssl-3.1.3.tar.gz -OutFile openssl-3.1.3.tar.gz
+          tar -xzf .\openssl-3.1.3.tar.gz
+          cd openssl-3.1.3
+          perl Configure VC-WIN64A no-shared
+          nmake
+          nmake install            
+
       - name:  Installing Boost
         shell: powershell
         run: |
