@@ -36,13 +36,13 @@ encryption and own sub-programs, which range from rolling dice to a game of ches
 The terminology used in the protocol is detailed below:
 
     3.01 IRCP
-    Internet Relay Chat Plus
+    Internet Relay Chat Plus.
 
     3.02 IRCPP
-    Internet Relay Chat Plus Protocol
+    Internet Relay Chat Plus Protocol.
 
     3.03 PACKAGE
-    A structured set of bytes specifically assembled to contain necessary data for IRCPP
+    A structured set of bytes specifically assembled to contain necessary data for IRCPP.
 
     3.04 SERVER
     The machine or program accepting connections from multiple clients in an IRCPP Network.
@@ -65,11 +65,14 @@ The terminology used in the protocol is detailed below:
     3.10 PAYLOAD SIZE
     The size of the actual data contained in the PACKAGE excluding the header.
 
-    3.09 LOST
+    3.11 HANDSHAKING
+    This is the initial process that the CLIENT and the SERVER undertake before they begin to send PACKETS to each
+    other.
 
-    3.10 HANDSHAKING
-
-    3.11 TIMEOUT-WITH-BYTE-WISE-REFRESH
+    3.12 TIMEOUT-WITH-BYTE-WISE-REFRESH
+    It is a subprocess within the protocol that allows a connection to be closed if it takes too long to receive
+    information from the other end of the connection. It is set to 5 seconds by default but the protocol leaves the
+    decision to the implementer.
 
                      ┌─────┐
                      │BEGIN│
@@ -104,18 +107,34 @@ The terminology used in the protocol is detailed below:
  │                                                               │
  └───────────────────────────────────────────────────────────────┘
  C=[1..7] R=[1..3] E=1 P=1 O=1
- * 64b to 8256b (8B to 1032B)
+ C=Close R=Retransmission E=Execution P=Permission O=OP-Code
 
 4.1 DETAILS
 
-- OP Code      (10 bits) : The operation code that specifies the type of operation to be performed.
-- Payload Size (14 bits) : The size (in bytes) of the Payload field. It represents the length of the Payload data.
-- Checksum     (32 bits) : Utilized for error-checking the header and data sections of the packet.
-- Payload      (?? bits) : The actual data to be transferred. Its length is variable, ranging from 0 to 512 bytes.
-- Flags        ( 8 bits) : if C is bigger than 0, this connection was requested to close by C reason.
-                           if R is bigger than 0, retransmission is requested by R reason.
-                           if P is set, permission error has occurred (this connection has lower required level)
-                           if O is set, op-code error has ocurred (not exist)
+- OP Code      (10 bits) : This code defines the specific type of operation to be conducted. There can be 1024 distinct
+                           operation codes.
+
+- Payload Size (14 bits) : This represents the size (measured in bytes) of the Payload field. It indicates the length of
+                           the Payload data.
+
+- Checksum     (32 bits) : This is used to perform error-checking on both the header and the data sections of the
+                           packet.
+
+- Payload      (?? bits) : This field carries the actual data to be transferred. Its length varies, and can range
+                           between 0 and 512 bytes.
+
+- Flags        ( 8 bits) : If the C value is greater than 0, it represents a request by the reason C to end this
+                           connection.
+
+                           If the R value is greater than 0, it represents a request for retransmission by the reason R.
+
+                           If the P flag is set, a permission error has occurred (this connection doesn't have the
+                           required level).
+
+                           If the O flag is set, an op-code error has surfaced (that op-code doesn't exist).
+
+                           If the E flag is set, an execution error has occurred in relation to the particular op-code.
+
 
 4.1.1 SOME CONSIDERATIONS
 Payload Size has 14 bits, allowing payloads of up to 8192 bits. Added to the 64 bits of the header, this gives us
@@ -179,86 +198,101 @@ IRCPP uses a system inspired by TLS to encrypt communication:
 5.2 PACKAGE SENDING/RECEIVING
 
     5.2.1 RECEIVE FLOW
+    The flowchart below represents the flow of a SOCKET operation.
 
-                                                                          ┌─────┐
-                                                                          │BEGIN│
-                                                                          └──┬──┘
-                                                                             │
-                                                                     ┌───────▼───────┐
-                 ┌───────────────────────────────────────────────────►WAIT FOR HEADER◄─────────────────┐
-                 │                                                   └───────┬───────┘                 │
-                 │                                                           │                         │
-                 │                                            ┌──────────────▼───────────────┐         │
-                END                               ┌─C:1──FAIL─┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
-                 │                                │           └──────────────┬───────────────┘         │
-                 │                                │                          │                         │
-   ┌─────────────┴────────────────┐           ┌───▼──────┐                   │                         │
-   │TIMEOUT-WITH-BYTE-WISE-REFRESH├─FAIL──C:5─►CLOSE CONN│                  END                        │
-   └────────────┬─────────────────┘           └──▲───────┘                   │                         │
-                │                                │                           │                         │
-                │                                │                  ┌────────▼─────────┐               │
-         ┌──────┴─────┐                          ├───────C:2──YES───┤PAYLOAD_SIZE > 512│               │
-         │    WAIT    │                          │                  └────────┬─────────┘               │
-         │CONFIRMATION│                          │                           │                         │
-         └──────▲─────┘                          │                           │                         │
-                │                                │                           NO                        │
-                │                                │                           │                         │
-         ┌──────┴───────┐                        │                 ┌─────────▼──────────┐              │
-         │RETRANSMISSION│                        │                 │  WAIT FOR PAYLOAD  │              │
-         │   REQUEST    │                        │                 │ PAYLOAD_SIZE BYTES │              │
-         └──────▲───────┘                        │                 └─────────┬──────────┘              │
-                │                                │                           │                         │
-                │                                │            ┌──────────────▼───────────────┐         │
-                │                                ├─C:3──FAIL──┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
-                │     ┌─────────────┐            │            └──────────────┬───────────────┘         │
-                └─NO──┤CONN_ERRORS>8├──YES──C:4──┘                           │                         │
-                      └──────▲──────┘                                       END                        │
-                             │                                               │                         │
-                    ┌────────┴───────┐                             ┌─────────▼─────────┐               │
-                    │CONN_ERRORS += 1◄─────────────────┬─R:1──FAIL─┤CHECKSUM VALIDATION│               │
-                    └────────────────┘                 │           └─────────┬─────────┘               │
-                                                       │                     │                         │
-                                                       │                  SUCCESS                      │
-                                                       │                     │                         │
-                                                       │               ┌─────▼──────┐                  │
-                                                       │               │DECRYPT WITH│                  │
-                                                       └─R:2──FAIL─────┤ CACHED AES │                  │
-                                                                       └─────┬──────┘                  │
-                                                                             │                         │
-                                                                          SUCCESS                      │
-                                                                             │                         │
-                                                                      ┌──────▼──────┐                  │
-                                                                      │CHECK OP-CODE├──────FAIL──0:1───┤
-                                                                      └──────┬──────┘                  │
-                                                                             │                         │
-                                                                          SUCCESS                      │
-                                                                             │                         │
-                                                                       ┌─────▼────┐                    │
-                                                                       │CHECK CONN│                    │
-                                                                       │ AUTHORITY├────────FAIL──P:1───┤
-                                                                       └─────┬────┘                    │
-                                                                             │                         │
-                                                                          SUCCESS                      │
-                                                                             │                         │
-                                                                     ┌───────▼────────┐                │
-                                                                     │CONN_ERRORS = 0 │                │
-                                                                     └───────┬────────┘                │
-                                                                             │                         │
-                                                                         ┌───▼───┐                     │
-                                                                         │EXECUTE│                     │
-                                                                         │OP-CODE├─────────FAIL──E:1───┘
-                                                                         └───┬───┘
-                                                                             │
-                                                                          SUCCESS
-                                                                             │
-                                                                           ┌─▼─┐
-                                                                           │END│
-                                                                           └───┘
+    The notation "N:X" is utilized, where N can be C, R, E, P, or O, and X is a numerical value, indicating that the
+    flag N is assigned the value X. In this scenario, both the PAYLOAD and the CHECKSUM are set to zero, while the
+    OP CODE remains unchanged.
+
+																		┌─────┐
+																		│BEGIN│
+																		└──┬──┘
+																		   │
+																   ┌───────▼───────┐
+			  ┌────────────────────────────────────────────────────►WAIT FOR HEADER◄─────────────────┐
+			  │                                                    └───────┬───────┘                 │
+			  │                                                            │                         │
+			  │                                             ┌──────────────▼───────────────┐         │
+			 END                                ┌─C:1──FAIL─►TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
+			  │                                 │           └──────────────┬───────────────┘         │
+			  │                                 │                          │                         │
+ ┌────────────┴─────────────────┐           ┌───┴──────┐                   │                         │
+ │TIMEOUT-WITH-BYTE-WISE-REFRESH├─FAIL──C:5─►CLOSE CONN│                  END                        │
+ └────────────▲─────────────────┘           └──▲───────┘                   │                         │
+			  │                                │                 ┌─────────▼──────────┐              │
+			  │                                ├◄──────C:2──YES──┤ PAYLOAD_SIZE > 512 │              │
+	   ┌──────┴───────┐                        │                 └─────────┬──────────┘              │
+	   │     WAIT     │                        │                           │                         │
+	   │ CONFIRMATION │                        │                           NO                        │
+	   └──────▲───────┘                        │                           │                         │
+			  │                                │                 ┌─────────▼──────────┐              │
+	   ┌──────┴───────┐                        │                 │  WAIT FOR PAYLOAD  │              │
+	   │RETRANSMISSION│                        │                 │ PAYLOAD_SIZE BYTES │              │
+	   │   REQUEST    │                        │                 └─────────┬──────────┘              │
+	   └──────▲───────┘                        │                           │                         │
+			  │                                │            ┌──────────────▼───────────────┐         │
+			  │                                ├◄─C:3──FAIL─┤TIMEOUT-WITH-BYTE-WISE-REFRESH│         │
+			  │     ┌─────────────┐            │            └──────────────┬───────────────┘         │
+			  └─NO──┤CONN_ERRORS>8├──YES──C:4──┘                           │                         │
+					└──────▲──────┘                                       END                        │
+						   │                                               │                         │
+				  ┌────────┴───────┐                             ┌─────────▼─────────┐               │
+				  │CONN_ERRORS += 1◄─────────────────┬─R:1──FAIL─┤CHECKSUM VALIDATION│               │
+				  └────────────────┘                 ▲           └─────────┬─────────┘               │
+													 │                     │                         │
+													 │                  SUCCESS                      │
+													 │                     │                         │
+													 │              ┌──────▼───────┐     ┌────────┐  │
+													 │              │RETRANSMISSION├─YES─► RESEND ├─►│
+													 │              │   REQUESTD   │     │ BUFFER │  │
+													 │              └──────┬───────┘     └────────┘  │
+													 │                     │                         │
+													 │                    NO                         │
+													 │                     │                         │
+													 │              ┌──────▼───────┐     ┌─────────┐ │
+													 │              │    CLOSED    ├─YES─►   END   │ │
+													 │              │  REQUESTED   │     └─────────┘ │
+													 │              └──────┬───────┘                 │
+													 │                     │                         │
+													 │                    NO                         │
+													 │                     │                         │
+													 │              ┌──────▼───────┐                 │
+													 │              │ DECRYPT WITH │                 │
+													 └─R:2──FAIL────┤  CACHED AES  │                 │
+																	└──────┬───────┘                 │
+																		   │                         │
+																		SUCCESS                      │
+																		   │                         │
+																	┌──────▼───────┐                 │
+																	│CHECK OP-CODE ├─────FAIL──0:1──►│
+																	└──────┬───────┘                 │
+																		   │                         │
+																		SUCCESS                      │
+																		   │                         │
+																	┌──────▼───────┐                 │
+																	│ CHECK CONN   │                 │
+																	│  AUTHORITY   ├─────FAIL──P:1──►│
+																	└──────┬───────┘                 │
+																		   │                         │
+																		SUCCESS                      │
+																		   │                         │
+																	┌──────▼───────┐                 │
+																	│CONN_ERRORS=0 │                 │
+																	└──────┬───────┘                 │
+																		   │                         │
+																	┌──────▼───────┐                 │
+																	│   EXECUTE    │                 │
+																	│   OP-CODE    ├─────FAIL──E:1──►│
+																	└──────┬───────┘                 │
+																		   │                         │
+																		   │                         │
+																		   └────────SUCCESS─────────►┘
 
 
     5.2.2 SEND FLOW
-    IRCPP consider two local-buffer when sending data. This allow to still concatenate bytes to send in a back-buffer
-    while the main-buffer is still sending through the network.
+    IRCPP utilizes two local buffers when transmitting data. This dual-buffer system enables continued data
+    concatenation in an auxiliary (back) buffer while data in the primary (main) buffer is actively being sent over the
+    network.
 
 
 
